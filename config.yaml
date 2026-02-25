@@ -24,7 +24,7 @@ data:
   batch_size: 32
   num_workers: 4
 
-# ── Step 2: Model (S4D / BNSReg) ─────────────────
+# ── Step 2: Model (S4D) ─────────────────
 model:
   d_input:  1    # number of input channels (strain only)
   d_output: 1    # predict chirp mass
@@ -47,7 +47,7 @@ bank_filter:
   # Extra margin around predicted chirp-mass range (M_sun)
   margin: 0.1
 
-# ── Step 4: Matched filtering (gstlal) ───────────
+# ── Step 4: Matched filtering ───────────
 matched_filter:
   ifos: [H1, L1]
   # GW frame files (gwf) for each IFO
