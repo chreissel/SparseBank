@@ -1,0 +1,64 @@
+# ──────────────────────────────────────────────────
+# GW Analysis Pipeline – Configuration
+# ──────────────────────────────────────────────────
+
+# ── Global ────────────────────────────────────────
+seed: 42
+
+# ── Step 1: Data generation (SparseBank style) ────
+sample_rate: 512     # Hz
+duration: 64         # seconds per sample
+f_lower: 20.0        # Hz
+snr_min: 20.0
+snr_max: 30.0
+m1_min: 1.0          # solar masses
+m1_max: 2.5
+n_train: 10000
+n_val:   1000
+n_test:  1000
+data_dir: data       # root directory for HDF5 files
+
+# ── Step 2: Dataloader settings ───────────────────
+data:
+  data_dir: data
+  batch_size: 32
+  num_workers: 4
+
+# ── Step 2: Model (S4D / BNSReg) ─────────────────
+model:
+  d_input:  1    # number of input channels (strain only)
+  d_output: 1    # predict chirp mass
+  d_model:  64
+  d_state:  16
+  n_layers: 4
+  dropout:  0.1
+
+# ── Step 2: Training ──────────────────────────────
+training:
+  max_epochs: 50
+  checkpoint_dir: checkpoints
+
+# ── Step 3: Bank filtering ────────────────────────
+bank_filter:
+  # Path to the full gstlal template bank (XML or XML.gz)
+  input_bank:  templates/full_bns_bank.xml.gz
+  # Output filtered bank
+  output_bank: templates/filtered_bank.xml.gz
+  # Extra margin around predicted chirp-mass range (M_sun)
+  margin: 0.1
+
+# ── Step 4: Matched filtering (gstlal) ───────────
+matched_filter:
+  ifos: [H1, L1]
+  # GW frame files (gwf) for each IFO
+  strain_files:
+    - data/H1_strain.gwf
+    - data/L1_strain.gwf
+  psd_fft_length:    16
+  ht_gate_threshold: 100
+  svd_tolerance:     0.9999
+  output_dir:        gstlal_output
+  # Set use_condor: true to submit an HTCondor DAG
+  use_condor:   false
+  # Set run_locally: true to call gstlal_inspiral directly
+  run_locally:  true
