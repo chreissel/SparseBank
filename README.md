@@ -41,3 +41,12 @@ Run individual steps:
 python main.py --config config.yaml --steps 1        # generation only
 python main.py --config config.yaml --steps 2,3,4    # train + filter + match
 ```
+
+## Where Do We Stand
+
+The overall pipeline structure is in place and all four steps are implemented end to end. The current focus is on hardening individual components before running a full integration test.
+
+- [ ] Update data generation to ml4gw language (real background)
+- [ ] Test training pipeline
+- [ ] Add functionality to load pretrained model
+- [ ] Test steps 3 and 4 of the pipeline
