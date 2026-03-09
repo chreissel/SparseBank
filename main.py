@@ -11,6 +11,7 @@ from step1.data import generate_dataset
 from step2 import train_regression
 from step3 import filter_bank
 from step4 import run_matched_filter_per_event
+from step5 import run_sensitive_volume_analysis, download_pipeline_results
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
@@ -21,7 +22,9 @@ def main():
     parser.add_argument("--config", default="config.yaml",
                         help="Path to YAML config (optional; defaults used otherwise)")
     parser.add_argument("--steps", default="1,2,3,4",
-                        help="Comma-separated list of steps to run (default: 1,2,3,4)")
+                        help="Comma-separated list of steps to run (default: 1,2,3,4). "
+                             "Step 5 computes the sensitive volume at FAR=1/year and "
+                             "downloads public matched-filter results from GWOSC.")
     args = parser.parse_args()
 
     cfg = {}
@@ -60,6 +63,21 @@ def main():
             log.warning("[Step 4] No per-event banks from step 3; "
                         "step 4 will use the full input bank.")
         run_matched_filter_per_event(cfg, event_banks or [])
+
+    # ── Step 5: Sensitive volume & GWOSC download ─────────────
+    if 5 in steps:
+        log.info("[Step 5] Downloading public matched-filter results from GWOSC …")
+        download_pipeline_results(cfg)
+        log.info("[Step 5] Computing sensitive volume at FAR = 1/year …")
+        sv_results = run_sensitive_volume_analysis(cfg)
+        log.info(
+            "[Step 5] V_T = %.3e ± %.3e Mpc^3  (p_det=%.4f, N_found=%d/%d)",
+            sv_results["v_t_mpc3"],
+            sv_results["sigma_v_mpc3"],
+            sv_results["p_det"],
+            sv_results["n_found"],
+            sv_results["n_injections"],
+        )
 
     log.info("Pipeline complete.")
 

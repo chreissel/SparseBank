@@ -50,6 +50,29 @@ bank_filter:
   # Extra margin around predicted chirp-mass range (M_sun)
   margin: 0.1
 
+# ── Step 5: Sensitive volume ──────────────────────────────────
+sensitive_volume:
+  # Output directory for V_T results and downloaded catalog data
+  output_dir: sensitive_volume_output
+  # SNR threshold used as a proxy for FAR = 1/year.
+  # For a 2-detector H1+L1 network at O3 sensitivity, combined network SNR
+  # ≈ 10–12 corresponds to a false alarm rate of roughly 1/year.
+  snr_threshold: 10.0
+  # Reference calibration: a canonical 1.4+1.4 M_sun BNS at this luminosity
+  # distance achieves snr_ref in a single O3-like detector.
+  d_ref_mpc: 100.0
+  snr_ref:   8.0    # minimum injection SNR (= Step 1 snr_min)
+  # FAR threshold in Hz (1/year = 3.17e-8 Hz)
+  far_threshold_hz: 3.17e-8
+  # GWOSC catalogs to download for comparison
+  gwosc_catalogs: [GWTC-2, GWTC-3]
+  # BNS / NSBH events to fetch individually (in addition to mass-range matches)
+  bns_events:
+    - GW170817
+    - GW190425
+    - GW200105_162426
+    - GW200115_042309
+
 # ── Step 4: Matched filtering ───────────
 matched_filter:
   ifos: [H1, L1]
