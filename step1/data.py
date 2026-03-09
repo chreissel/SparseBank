@@ -1,5 +1,5 @@
 # ─────────────────────────────────────────────────────────────
-# STEP 1 – Signal & background generation 
+# STEP 1 – Signal & background generation
 # ─────────────────────────────────────────────────────────────
 
 import os
@@ -9,6 +9,7 @@ import yaml
 import h5py
 import numpy as np
 from pathlib import Path
+from types import SimpleNamespace
 import torch
 
 import logging
@@ -32,6 +33,7 @@ def generate_dataset(cfg: dict, split: str) -> Path:
     from ml4gw.waveforms.generator import TimeDomainCBCWaveformGenerator
     from step1.transforms import Triangular
     from ml4gw.waveforms import TaylorF2
+    from step1.load_data import load_data
 
     rng = np.random.default_rng(cfg.get("seed", 42) + hash(split) % 2**31)
 
@@ -41,7 +43,7 @@ def generate_dataset(cfg: dict, split: str) -> Path:
     sample_rate = cfg.get("sample_rate", 512)   # Hz
     duration    = cfg.get("duration", 64)       # seconds
     f_min       = cfg.get("f_min", 20.0)       # Hz
-    f_max       = cfg.get("f_max", 20.0)       # Hz
+    f_max       = cfg.get("f_max", 256.0)      # Hz
     f_ref       = cfg.get("f_ref", 50.0)       # Hz
     snr_min     = cfg.get("snr_min", 20.0)
     snr_max     = cfg.get("snr_max", 30.0)
@@ -49,11 +51,11 @@ def generate_dataset(cfg: dict, split: str) -> Path:
     m_max       = cfg.get("m1_max", 2.5)
     right_pad   = cfg.get("right_pad", 1.0)
     psd_length  = cfg.get("psd_length", 64.0)
-    open_data   = Path('/n/holystore01/LABS/iaifi_lab/Lab/creissel/SparseBank/background_data/')
+    open_data   = Path(cfg["data_dir"]) / "background_data"
 
     nyguist = sample_rate / 2
     num_samples    = int(duration * sample_rate)
-    num_freqs = num_samples // 2 + 1 
+    num_freqs = num_samples // 2 + 1
     psd_size = int(psd_length * sample_rate)
     window_length = psd_length + 2.0 + duration
 
@@ -62,6 +64,17 @@ def generate_dataset(cfg: dict, split: str) -> Path:
     out_path = out_dir / f"sig_combined_{split}.h5"
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    if not open_data.exists():
+        log.info(f"[Step 1] Background data directory not found at {open_data}. Fetching data...")
+        load_cfg = SimpleNamespace(
+            general=SimpleNamespace(
+                ifos=ifos,
+                waveform_duration=window_length,
+                sample_rate=sample_rate,
+            )
+        )
+        load_data(load_cfg, Path(cfg["data_dir"]))
 
     log.info(f"[Step 1] Generating {n_samples} {split} samples → {out_path}")
 
@@ -110,7 +123,7 @@ def generate_dataset(cfg: dict, split: str) -> Path:
         dec = Cosine()
         psi = Uniform(0, torch.pi)
         phi = Uniform(-torch.pi, torch.pi)
-    
+
         params['dec'] = dec.sample((batch_size,)).to(device)
         params['psi'] = psi.sample((batch_size,)).to(device)
         params['phi'] = phi.sample((batch_size,)).to(device)
@@ -135,14 +148,14 @@ def generate_dataset(cfg: dict, split: str) -> Path:
             channels=ifos,
             kernel_size=int(window_length * sample_rate),
             batch_size=batch_size,
-            batches_per_epoch=1,  
+            batches_per_epoch=1,
             coincident=False,
         )
         background = [x for x in dataloader][0].to(device)
         spectral_density = SpectralDensity(
             sample_rate=sample_rate,
             fftlength=2.0,
-            overlap=null,
+            overlap=None,
             average='median',
         ).to(device)
 
@@ -150,8 +163,8 @@ def generate_dataset(cfg: dict, split: str) -> Path:
             fduration=2.0, sample_rate=sample_rate, highpass=f_min
         ).to(device)
 
-        psd = spectral_density(background_samples[..., :psd_size].double())
-        kernel = background_samples[..., psd_size:]
+        psd = spectral_density(background[..., :psd_size].double())
+        kernel = background[..., psd_size:]
 
         # ── target SNR rescaling ──────────────────────────
         pad = int(2.0 / 2 * sample_rate)
@@ -164,9 +177,9 @@ def generate_dataset(cfg: dict, split: str) -> Path:
             psd = torch.nn.functional.interpolate(psd, size=(num_freqs,), mode="linear")
 
         target_snr = PowerLaw(8,100,-3).to(device)
-        waveforms = reweight_snrs(responses=waveforms,target_snrs=target_snrs,psd=psd,sample_rate=sample_rate,highpass=f_min,)
+        waveforms = reweight_snrs(responses=waveforms,target_snrs=target_snr.sample((batch_size,)),psd=psd,sample_rate=sample_rate,highpass=f_min,)
 
-        injected[:, :, pad:-pad] += waveforms[..., -kernel_size:]
+        injected[:, :, pad:-pad] += waveforms[..., -num_samples:]
         injected_whitened = whiten(injected, psd)
         strain_td = injected_whitened.cpu().numpy()
 
@@ -174,17 +187,15 @@ def generate_dataset(cfg: dict, split: str) -> Path:
         network_snr = compute_network_snr(responses=waveforms, psd=psd, sample_rate=sample_rate, highpass=f_min)
         params['snr'] = network_snr
 
-        # keep only a small window around merger  
+        # keep only a small window around merger
         t_start = int(0.0 * sample_rate)
         t_end   = int(55.0 * sample_rate)
-        window  = np.array(strain_td)[t_start:t_end]
+        window  = strain_td[:, :, t_start:t_end]
         injected_data_list.append(window.astype(np.float32))
 
         chirp_mass_list.append(params['chirp_mass'])
-        chirp_mass_list.append(params['mass_ratio'])
-        snr_list.append(target_snr)
-        import pdb
-        pdb.set_trace()
+        mass_ratio_list.append(params['mass_ratio'])
+        snr_list.append(network_snr)
 
         total += batch_size
         if total % batch_size == 0:
