@@ -10,6 +10,7 @@ from pathlib import Path
 from step1.data import generate_dataset
 from step2 import train_regression
 from step3 import filter_bank
+from step4 import run_matched_filter_per_event
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
@@ -55,7 +56,6 @@ def main():
 
     # ── Step 4: Matched filtering ─────────────────────────────
     if 4 in steps:
-        from matched_filtering import run_matched_filter_per_event
         if event_banks is None:
             log.warning("[Step 4] No per-event banks from step 3; "
                         "step 4 will use the full input bank.")
