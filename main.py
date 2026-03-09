@@ -11,7 +11,7 @@ import numpy as np
 from pathlib import Path
 
 from step1.data import generate_dataset
-from regression import train_regression
+from step2 import train_regression
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
