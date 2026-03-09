@@ -5,10 +5,12 @@
 # ── Global ────────────────────────────────────────
 seed: 42
 
-# ── Step 1: Data generation (SparseBank style) ────
+# ── Step 1: Data generation  ──────────────────────     
 sample_rate: 512     # Hz
 duration: 64         # seconds per sample
-f_lower: 20.0        # Hz
+f_min: 20.0          # Hz
+f_max: 256.0
+f_ref: 50.0
 snr_min: 20.0
 snr_max: 30.0
 m1_min: 1.0          # solar masses
@@ -16,6 +18,7 @@ m1_max: 2.5
 n_train: 10000
 n_val:   1000
 n_test:  1000
+batch_size: 350
 data_dir: data       # root directory for HDF5 files
 
 # ── Step 2: Dataloader settings ───────────────────

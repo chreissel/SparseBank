@@ -10,7 +10,7 @@ import h5py
 import numpy as np
 from pathlib import Path
 
-from data import generate_dataset
+from step1.data import generate_dataset
 from regression import train_regression
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
