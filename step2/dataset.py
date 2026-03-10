@@ -57,7 +57,6 @@ class SparseRegressionConfig:
     test_dir: str
 
     target_variables: Tuple[str, ...] = ("chirp_mass",)
-    observed_variables: Tuple[str, ...] = ("snr",)
 
     injected_data_key: str = "injected_data"
 
@@ -125,12 +124,11 @@ class BNSDatasetRegression(Dataset):
     Both the step1 batched format (4-D) and the already-flattened format
     (3-D) are supported and may be mixed across files in the same folder.
 
-    Returns 3-tuples:
-        (X_sequence, y_target, z_observed)
+    Returns 2-tuples:
+        (X_observed, y_target)
 
-    X_sequence : (n_ifos, seq_len)   — raw whitened strain per detector
+    X_observed : (n_ifos, seq_len)   — raw whitened strain per detector
     y_target   : (len(target_variables),)
-    z_observed : (len(observed_variables),)
     """
 
     def __init__(self, stage: Stage, cfg: SparseRegressionConfig):
@@ -237,23 +235,16 @@ class BNSDatasetRegression(Dataset):
         if meta["4d"]:
             bi, si = divmod(local_idx, meta["gen_batch_size"])
             x_raw = f[self.cfg.injected_data_key][bi, si]   # (n_ifos, seq_len)
-            y_raw = {k: f[k][bi, si] for k in (*self.cfg.target_variables,
-                                                *self.cfg.observed_variables)}
+            y_raw = {k: f[k][bi, si] for k in self.cfg.target_variables}
         else:
             x_raw = f[self.cfg.injected_data_key][local_idx]  # (n_ifos, seq_len)
-            y_raw = {k: f[k][local_idx] for k in (*self.cfg.target_variables,
-                                                   *self.cfg.observed_variables)}
+            y_raw = {k: f[k][local_idx] for k in self.cfg.target_variables}
 
-        X_sequence = torch.as_tensor(x_raw, dtype=self.strain_dtype)   # (n_ifos, seq_len)
+        X_observed = torch.as_tensor(x_raw, dtype=self.strain_dtype)   # (n_ifos, seq_len)
 
         y_target = torch.stack([
             torch.as_tensor(y_raw[k], dtype=self.var_dtype)
             for k in self.cfg.target_variables
         ]) if self.cfg.target_variables else torch.empty(0, dtype=self.var_dtype)
 
-        z_observed = torch.stack([
-            torch.as_tensor(y_raw[k], dtype=self.var_dtype)
-            for k in self.cfg.observed_variables
-        ]) if self.cfg.observed_variables else torch.empty(0, dtype=self.var_dtype)
-
-        return X_sequence, y_target, z_observed
+        return X_observed, y_target
