@@ -22,13 +22,12 @@ batch_size: 350
 open_data: /n/holystore01/LABS/iaifi_lab/Lab/creissel/SparseBank/background_data # root directory for HDF5 files
 data_dir: /n/holystore01/LABS/iaifi_lab/Lab/creissel/SparseBank/sim # root directory for HDF5 files
 
-# ── Step 2: Dataloader settings ───────────────────
+# ── Step 2: Training mass regression ────────────────
 data:
-  data_dir: data
+  data_dir: /n/holystore01/LABS/iaifi_lab/Lab/creissel/SparseBank/sim/
   batch_size: 32
   num_workers: 4
 
-# ── Step 2: Model (S4D) ─────────────────
 model:
   d_input:  1    # number of input channels (strain only)
   d_output: 1    # predict chirp mass
@@ -37,10 +36,9 @@ model:
   n_layers: 4
   dropout:  0.1
 
-# ── Step 2: Training ──────────────────────────────
 training:
-  max_epochs: 50
-  checkpoint_dir: checkpoints
+  max_epochs: 2
+  checkpoint_dir: /n/holystore01/LABS/iaifi_lab/Lab/creissel/SparseBank/model/
 
 # ── Step 3: Bank filtering ────────────────────────
 bank_filter:
@@ -50,6 +48,22 @@ bank_filter:
   output_bank: templates/filtered_bank.xml.gz
   # Extra margin around predicted chirp-mass range (M_sun)
   margin: 0.1
+
+# ── Step 4: Matched filtering ───────────
+matched_filter:
+  ifos: [H1, L1]
+  # GW frame files (gwf) for each IFO
+  strain_files:
+    - data/H1_strain.gwf
+    - data/L1_strain.gwf
+  psd_fft_length:    16
+  ht_gate_threshold: 100
+  svd_tolerance:     0.9999
+  output_dir:        gstlal_output
+  # Set use_condor: true to submit an HTCondor DAG
+  use_condor:   false
+  # Set run_locally: true to call gstlal_inspiral directly
+  run_locally:  true
 
 # ── Step 5: Sensitive volume ──────────────────────────────────
 sensitive_volume:
@@ -73,19 +87,3 @@ sensitive_volume:
     - GW190425
     - GW200105_162426
     - GW200115_042309
-
-# ── Step 4: Matched filtering ───────────
-matched_filter:
-  ifos: [H1, L1]
-  # GW frame files (gwf) for each IFO
-  strain_files:
-    - data/H1_strain.gwf
-    - data/L1_strain.gwf
-  psd_fft_length:    16
-  ht_gate_threshold: 100
-  svd_tolerance:     0.9999
-  output_dir:        gstlal_output
-  # Set use_condor: true to submit an HTCondor DAG
-  use_condor:   false
-  # Set run_locally: true to call gstlal_inspiral directly
-  run_locally:  true
