@@ -19,7 +19,8 @@ n_train: 10000
 n_val:   1000
 n_test:  1000
 batch_size: 350
-data_dir: data       # root directory for HDF5 files
+open_data: /n/holystore01/LABS/iaifi_lab/Lab/creissel/SparseBank/background_data # root directory for HDF5 files
+data_dir: /n/holystore01/LABS/iaifi_lab/Lab/creissel/SparseBank/sim # root directory for HDF5 files
 
 # ── Step 2: Dataloader settings ───────────────────
 data:

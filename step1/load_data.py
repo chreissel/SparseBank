@@ -1,6 +1,5 @@
 from gwpy.timeseries import TimeSeries, TimeSeriesDict
 import yaml
-from utils import load_config
 from pathlib import Path
 import os
 import subprocess
@@ -62,7 +61,3 @@ def load_data(config, data_dir: str):
             ts_dict = ts_dict.resample(config.general.sample_rate)
             ts_dict.write(fname, format="hdf5")
 
-if __name__ == '__main__':
-    config = load_config(config_path='configs/config_BNS.yaml')
-    data_dir = Path("./data")
-    load_data(config, data_dir)

@@ -18,9 +18,6 @@ log = logging.getLogger("step1")
 def generate_dataset(cfg: dict, split: str) -> Path:
     """
     Generate BNS waveforms + Gaussian noise backgrounds and write to HDF5.
-    TODO: replace with the actual BNS signal generation
-
-      - masses drawn from uniform distributions
       - waveforms approximant: TaylorF2
       - strain whitened, windowed, and segmented
     """
@@ -51,7 +48,7 @@ def generate_dataset(cfg: dict, split: str) -> Path:
     m_max       = cfg.get("m1_max", 2.5)
     right_pad   = cfg.get("right_pad", 1.0)
     psd_length  = cfg.get("psd_length", 64.0)
-    open_data   = Path(cfg["data_dir"]) / "background_data"
+    open_data   = Path(cfg["open_data"])
 
     nyguist = sample_rate / 2
     num_samples    = int(duration * sample_rate)
@@ -61,7 +58,6 @@ def generate_dataset(cfg: dict, split: str) -> Path:
 
     out_dir  = Path(cfg["data_dir"]) / split
     out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / f"sig_combined_{split}.h5"
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -76,15 +72,11 @@ def generate_dataset(cfg: dict, split: str) -> Path:
         )
         load_data(load_cfg, Path(cfg["data_dir"]))
 
-    log.info(f"[Step 1] Generating {n_samples} {split} samples → {out_path}")
-
-    injected_data_list = []
-    chirp_mass_list    = []
-    mass_ratio_list    = []
-    snr_list           = []
+    log.info(f"[Step 1] Generating {n_samples} {split} samples → {out_dir}")
 
     total = 0
     while total < n_samples:
+        out_path = out_dir / f"sig_combined_{split}_{total}.h5"
 
         # ── generate waveform ──────────────────────────────
         param_dict = {
@@ -176,8 +168,8 @@ def generate_dataset(cfg: dict, split: str) -> Path:
                 psd = psd[None]
             psd = torch.nn.functional.interpolate(psd, size=(num_freqs,), mode="linear")
 
-        target_snr = PowerLaw(8,100,-3).to(device)
-        waveforms = reweight_snrs(responses=waveforms,target_snrs=target_snr.sample((batch_size,)),psd=psd,sample_rate=sample_rate,highpass=f_min,)
+        target_snr = PowerLaw(8,100,-3).sample((batch_size,)).to(device)
+        waveforms = reweight_snrs(responses=waveforms,target_snrs=target_snr,psd=psd,sample_rate=sample_rate,highpass=f_min,)
 
         injected[:, :, pad:-pad] += waveforms[..., -num_samples:]
         injected_whitened = whiten(injected, psd)
@@ -191,21 +183,16 @@ def generate_dataset(cfg: dict, split: str) -> Path:
         t_start = int(0.0 * sample_rate)
         t_end   = int(55.0 * sample_rate)
         window  = strain_td[:, :, t_start:t_end]
-        injected_data_list.append(window.astype(np.float32))
-
-        chirp_mass_list.append(params['chirp_mass'])
-        mass_ratio_list.append(params['mass_ratio'])
-        snr_list.append(network_snr)
 
         total += batch_size
         if total % batch_size == 0:
                 log.info(f"  ... {total}/{n_samples} generated")
 
-    with h5py.File(out_path, "w") as f:
-        f.create_dataset("injected_data", data=np.array(injected_data_list))
-        f.create_dataset("chirp_mass",    data=np.array(chirp_mass_list,  dtype=np.float32))
-        f.create_dataset("mass_ratio",    data=np.array(mass_ratio_list,  dtype=np.float32))
-        f.create_dataset("snr",           data=np.array(snr_list,         dtype=np.float32))
+        with h5py.File(out_path, "w") as f:
+            f.create_dataset("injected_data", data=window)
+            f.create_dataset("chirp_mass",    data=np.array(params['chirp_mass'].cpu(), dtype=np.float32))
+            f.create_dataset("mass_ratio",    data=np.array(params['mass_ratio'].cpu(), dtype=np.float32))
+            f.create_dataset("snr",           data=np.array(params['snr'].cpu(), dtype=np.float32))
 
-    log.info(f"[Step 1] Done. Written {out_path}")
-    return out_path
+    log.info(f"[Step 1] Done. Written {out_dir}")
+    return out_dir
