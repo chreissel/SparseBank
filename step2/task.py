@@ -69,9 +69,8 @@ class LitModelS4DMSE(L.LightningModule):
     Mirrors BNSReg's LitModelS4DMSE.
 
     Batch format (from LitBNSDataRegression / BNSDatasetRegression):
-        X_sequence : (B, n_ifos, seq_len)
+        X_observed : (B, n_ifos, seq_len)
         y_target   : (B, d_output)
-        z_observed : (B, n_observed)  — not used in the loss, available for logging
     """
 
     def __init__(self, model_cfg: S4DModelConfig):
@@ -97,9 +96,9 @@ class LitModelS4DMSE(L.LightningModule):
 
     # ------------------------------------------------------------------
     def compute_loss(self, batch):
-        X_sequence, y_target, _z_observed = batch
-        # X_sequence: (B, n_ifos, seq_len) → transpose → (B, seq_len, n_ifos)
-        x = X_sequence.transpose(2, 1)
+        X_observed, y_target = batch
+        # X_observed: (B, n_ifos, seq_len) → transpose → (B, seq_len, n_ifos)
+        x = X_observed.transpose(2, 1)
         outputs = self(x)                                   # (B, d_output)
 
         mse_per_var = torch.nn.MSELoss(reduction="none")
