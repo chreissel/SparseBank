@@ -63,7 +63,20 @@ matched_filter:
   # Pre-whitened HDF5 test data produced by step 1.
   # Defaults to {data_dir}/test when omitted.
   test_dir: /n/holystore01/LABS/iaifi_lab/Lab/creissel/SparseBank/sim/test
-  output_dir: gstlal_output
+  # Detector channel names written into the temporary GWF files.
+  channel_names:
+    H1: GDS-CALIB_STRAIN
+    L1: GDS-CALIB_STRAIN
+  # Fake GPS start time assigned to each simulated segment (seconds).
+  gps_start: 1000000000
+  psd_fft_length:    16
+  ht_gate_threshold: 100
+  svd_tolerance:     0.9999
+  output_dir:        gstlal_output
+  # Set use_condor: true to submit an HTCondor DAG
+  use_condor:   false
+  # Set run_locally: true to call gstlal_inspiral directly
+  run_locally:  true
 
 # ── Step 5: Sensitive volume ──────────────────────────────────
 sensitive_volume:
