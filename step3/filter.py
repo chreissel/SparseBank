@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import logging
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import numpy as np
@@ -105,7 +104,7 @@ def filter_bank(cfg: dict, ckpt_path: Path) -> list[dict]:
     For every event in the test set:
       1. Load data via the step2 DataModule (reuses dataset/dataloader config).
       2. Run batched GPU inference over the test DataLoader.
-      3. Write a per-event filtered template bank in parallel.
+      3. Write a per-event filtered template bank.
 
     Parameters
     ----------
@@ -165,41 +164,16 @@ def filter_bank(cfg: dict, ckpt_path: Path) -> list[dict]:
     log.info("[Step 3] Filtering bank for %d events (margin ±%.3f M_sun) …",
              n_events, margin)
 
-    # ── Parallel bank pruning (thread pool for I/O-bound XML work) ──────────
-    n_kept_map: dict[int, int] = {}
-
-    with ThreadPoolExecutor() as executor:
-        future_to_idx = {
-            executor.submit(_prune_bank, bank_in, bank_paths[i], mc_preds[i], margin): i
-            for i in range(n_events)
-        }
-        for future in as_completed(future_to_idx):
-            i = future_to_idx[future]
-            n_kept_map[i] = future.result()
-
-    # Read full bank size once for logging (if ligo.lw available)
-    n_before: int | None = None
-    if any(v >= 0 for v in n_kept_map.values()):
-        try:
-            from ligo.lw import ligolw, lsctables, utils as ligolw_utils
-            xmldoc = ligolw_utils.load_filename(
-                str(bank_in),
-                contenthandler=lsctables.use_in(ligolw.LIGOLWContentHandler))
-            n_before = len(lsctables.SnglInspiralTable.get_table(xmldoc))
-        except Exception:
-            n_before = -1
-
     event_banks = []
     for i in range(n_events):
         mc_pred, ratio_pred, mc_unc, ratio_unc = predictions[i]
-        n_kept   = n_kept_map[i]
         bank_out = bank_paths[i]
+        n_kept   = _prune_bank(bank_in, bank_out, mc_preds[i], margin)
 
         log.info(
             "  event %06d | mc_pred=%.4f M_sun | mc_true=%.4f M_sun "
-            "| templates: %s → %s | %s",
-            i, mc_pred, float(mc_true[i]),
-            n_before, n_kept, bank_out.name,
+            "| n_kept=%s | %s",
+            i, mc_pred, float(mc_true[i]), n_kept, bank_out.name,
         )
 
         event_banks.append({
