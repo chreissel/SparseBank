@@ -4,11 +4,23 @@
 from __future__ import annotations
 
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import numpy as np
 
 log = logging.getLogger("step3")
+
+
+def _get_device():
+    """Return the best available torch device (CUDA > MPS > CPU)."""
+    import torch
+
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    if torch.backends.mps.is_available():
+        return torch.device("mps")
+    return torch.device("cpu")
 
 
 def _load_model(ckpt_path: Path):
@@ -17,48 +29,57 @@ def _load_model(ckpt_path: Path):
 
     Uses the same LitModelS4D class from step2 so the architecture
     is guaranteed to match the checkpoint that was just produced by
-    train_regression().  Returns the inner S4Model in eval mode on CPU.
+    train_regression().  Returns the inner S4Model in eval mode on the
+    best available device (CUDA > MPS > CPU).
     """
     from step2.task import LitModelS4D
 
-    lit = LitModelS4D.load_from_checkpoint(str(ckpt_path), map_location="cpu")
+    device = _get_device()
+    log.info("[Step 3] Using device: %s", device)
+
+    lit = LitModelS4D.load_from_checkpoint(str(ckpt_path), map_location=device)
     model = lit.model
     model.eval()
-    return model
+    model.to(device)
+    return model, device
 
 
-def _predict_chirp_mass(model, strain: np.ndarray) -> float:
+def _predict_chirp_masses_batch(model, device, strains: np.ndarray) -> np.ndarray:
     """
-    Run inference on a single strain window.
+    Run batched inference on all strain windows in a single forward pass.
 
     Parameters
     ----------
     model:
         S4Model returned by _load_model().
-    strain:
-        NumPy array of shape (n_ifos, seq_len) or (seq_len,) for a
-        single-channel case.
+    device:
+        torch.device to run inference on.
+    strains:
+        NumPy array of shape (n_events, n_ifos, seq_len) or
+        (n_events, seq_len) for a single-channel case.
 
     Returns
     -------
-    Predicted chirp mass (scalar, M_sun).
+    predictions : np.ndarray of shape (n_events, n_outputs)
+        Columns: [mc_pred, ratio_pred, mc_unc, ratio_unc]
     """
     import torch
 
-    x = torch.tensor(strain, dtype=torch.float32)
+    x = torch.tensor(strains, dtype=torch.float32)
 
-    if x.ndim == 1:
-        # single channel: (seq_len,) → (seq_len, 1)
+    if x.ndim == 2:
+        # single channel: (n_events, seq_len) → (n_events, seq_len, 1)
         x = x.unsqueeze(-1)
     else:
-        # multi-channel: (n_ifos, seq_len) → (seq_len, n_ifos)
-        x = x.T
+        # multi-channel: (n_events, n_ifos, seq_len) → (n_events, seq_len, n_ifos)
+        x = x.permute(0, 2, 1)
 
-    x = x.unsqueeze(0)  # → (1, seq_len, n_ifos)  i.e. (B, L, d_input)
+    x = x.to(device)
 
     with torch.no_grad():
-        pred = model(x)
-    return pred.cpu().flatten().tolist()
+        pred = model(x)  # (n_events, n_outputs)
+
+    return pred.cpu().numpy()
 
 
 def _prune_bank(bank_in: Path, bank_out: Path,
@@ -99,8 +120,10 @@ def _prune_bank(bank_in: Path, bank_out: Path,
 def filter_bank(cfg: dict, ckpt_path: Path) -> list[dict]:
     """
     For every event in the test set:
-      1. Run the trained model to predict chirp mass from the strain data.
-      2. Write a dedicated filtered template bank for that event.
+      1. Run the trained model to predict chirp mass from the strain data
+         (all events batched in a single GPU/CPU forward pass).
+      2. Write a dedicated filtered template bank for that event
+         (bank pruning runs in parallel via a thread pool).
 
     The path to the input XML bank is read from
     ``cfg["bank_filter"]["input_bank"]`` so it can be set freely in
@@ -125,7 +148,7 @@ def filter_bank(cfg: dict, ckpt_path: Path) -> list[dict]:
     import h5py
 
     log.info("[Step 3] Loading model from %s …", ckpt_path)
-    model = _load_model(ckpt_path)
+    model, device = _load_model(ckpt_path)
 
     data_dir = Path(cfg["data"]["data_dir"])
     test_dir = data_dir / "test"
@@ -155,27 +178,48 @@ def filter_bank(cfg: dict, ckpt_path: Path) -> list[dict]:
     margin    = float(cfg["bank_filter"].get("margin", 0.1))
 
     n_events = len(strains)
+    log.info("[Step 3] Running batched inference for %d events on %s …",
+             n_events, device)
+
+    # ── Batched GPU inference (single forward pass for all events) ──────────
+    predictions = _predict_chirp_masses_batch(model, device, strains)
+    # predictions shape: (n_events, 4) → [mc_pred, ratio_pred, mc_unc, ratio_unc]
+
     log.info("[Step 3] Filtering bank for %d events (margin ±%.3f M_sun) …",
              n_events, margin)
 
+    bank_paths = [banks_dir / f"bank_event_{i:06d}.xml.gz" for i in range(n_events)]
+    mc_preds   = predictions[:, 0].tolist()
+
+    # ── Parallel bank pruning (thread pool for I/O-bound XML work) ──────────
+    n_kept_map: dict[int, int] = {}
+    n_before: int | None = None
+
+    with ThreadPoolExecutor() as executor:
+        future_to_idx = {
+            executor.submit(_prune_bank, bank_in, bank_paths[i], mc_preds[i], margin): i
+            for i in range(n_events)
+        }
+        for future in as_completed(future_to_idx):
+            i = future_to_idx[future]
+            n_kept_map[i] = future.result()
+
+    # Read full bank size once for logging (if ligo.lw available)
+    if any(v >= 0 for v in n_kept_map.values()):
+        try:
+            from ligo.lw import ligolw, lsctables, utils as ligolw_utils
+            xmldoc   = ligolw_utils.load_filename(
+                str(bank_in),
+                contenthandler=lsctables.use_in(ligolw.LIGOLWContentHandler))
+            n_before = len(lsctables.SnglInspiralTable.get_table(xmldoc))
+        except Exception:
+            n_before = -1
+
     event_banks = []
-    n_before    = None  # read full bank size once for logging
-
-    for i, strain in enumerate(strains):
-        mc_pred, ratio_pred, mc_unc, ratio_unc = _predict_chirp_mass(model, strain)
-        bank_out = banks_dir / f"bank_event_{i:06d}.xml.gz"
-
-        n_kept = _prune_bank(bank_in, bank_out, mc_pred, margin)
-
-        if n_before is None and n_kept >= 0:
-            try:
-                from ligo.lw import ligolw, lsctables, utils as ligolw_utils
-                xmldoc   = ligolw_utils.load_filename(
-                    str(bank_in),
-                    contenthandler=lsctables.use_in(ligolw.LIGOLWContentHandler))
-                n_before = len(lsctables.SnglInspiralTable.get_table(xmldoc))
-            except Exception:
-                n_before = -1
+    for i in range(n_events):
+        mc_pred, ratio_pred, mc_unc, ratio_unc = predictions[i]
+        n_kept   = n_kept_map[i]
+        bank_out = bank_paths[i]
 
         log.info(
             "  event %06d | mc_pred=%.4f M_sun | mc_true=%.4f M_sun "
@@ -186,7 +230,7 @@ def filter_bank(cfg: dict, ckpt_path: Path) -> list[dict]:
 
         event_banks.append({
             "event_id":  i,
-            "mc_pred":   mc_pred,
+            "mc_pred":   float(mc_pred),
             "mc_true":   float(y_true[i]),
             "bank_path": bank_out,
             "n_kept":    n_kept,
