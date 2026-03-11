@@ -127,18 +127,33 @@ def filter_bank(cfg: dict, ckpt_path: Path) -> list[dict]:
     log.info("[Step 3] Loading model from %s …", ckpt_path)
     model = _load_model(ckpt_path)
 
-    data_dir  = Path(cfg["data"]["data_dir"])
-    test_file = data_dir / "test" / "sig_combined_test.h5"
+    data_dir = Path(cfg["data"]["data_dir"])
+    test_dir = data_dir / "test"
+    h5_files = sorted(test_dir.glob("*.h5"))
 
-    with h5py.File(test_file, "r") as f:
-        strains = f["injected_data"][:]   # (N, n_ifos, seq_len) or (N, seq_len)
-        y_true  = f["chirp_mass"][:]
+    if not h5_files:
+        raise FileNotFoundError(f"[Step 3] No HDF5 files found in {test_dir}")
 
-    # Flatten batched format if necessary: (n_gen, bs, n_ifos, L) → (N, n_ifos, L)
-    if strains.ndim == 4:
-        n_gen, bs = strains.shape[:2]
-        strains = strains.reshape(n_gen * bs, *strains.shape[2:])
-        y_true  = y_true.reshape(-1)
+    log.info("[Step 3] Found %d HDF5 file(s) in %s", len(h5_files), test_dir)
+
+    all_strains, all_y_true = [], []
+    for h5_path in h5_files:
+        log.info("[Step 3]   Loading %s …", h5_path.name)
+        with h5py.File(h5_path, "r") as f:
+            strains_chunk = f["injected_data"][:]
+            y_true_chunk  = f["chirp_mass"][:]
+
+        # Flatten batched format if necessary: (n_gen, bs, n_ifos, L) → (N, n_ifos, L)
+        if strains_chunk.ndim == 4:
+            n_gen, bs = strains_chunk.shape[:2]
+            strains_chunk = strains_chunk.reshape(n_gen * bs, *strains_chunk.shape[2:])
+            y_true_chunk  = y_true_chunk.reshape(-1)
+
+        all_strains.append(strains_chunk)
+        all_y_true.append(y_true_chunk)
+
+    strains = np.concatenate(all_strains, axis=0)
+    y_true  = np.concatenate(all_y_true,  axis=0)
 
     bank_in   = Path(cfg["bank_filter"]["input_bank"])
     banks_dir = Path(cfg["bank_filter"].get("per_event_dir", "templates/per_event"))
