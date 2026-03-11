@@ -11,13 +11,13 @@ import lightning as L
 
 from step2.dataset import SparseRegressionConfig
 from step2.dataloader import LitBNSDataRegression
-from step2.task import LitModelS4DMSE, S4DModelConfig
+from step2.task import LitModelS4D, S4DModelConfig
 
 log = logging.getLogger("step2")
 
 
 def train_regression(cfg: dict) -> Path:
-    """Train an S4D chirp-mass regression model.
+    """Train an S4D regression model.
 
     Parameters
     ----------
@@ -36,7 +36,7 @@ def train_regression(cfg: dict) -> Path:
 
     # ── DataModule & LightningModule ──────────────────────────────────
     dm        = LitBNSDataRegression(data_cfg)
-    lit_model = LitModelS4DMSE(model_cfg)
+    lit_model = LitModelS4D(model_cfg)
 
     # ── Trainer ───────────────────────────────────────────────────────
     ckpt_dir = Path(train_cfg.get("checkpoint_dir", "checkpoints"))

@@ -18,6 +18,12 @@ class S4DModelConfig:
 
     Mirrors BNSReg's S4DModelConfig.  dt_min / dt_max control the
     range of time-step initialisations in the S4D kernel.
+
+    loss: one of "mse" or "gaussian_nll".
+        "mse"          – standard MSELoss.
+        "gaussian_nll" – GaussianNLLLoss; the model predicts mean *and*
+                         log-variance for each target variable, so the actual
+                         S4Model output dimension is 2 * d_output.
     """
 
     d_input: int
@@ -29,15 +35,22 @@ class S4DModelConfig:
     dt_min: float = 0.001
     dt_max: float = 0.1
     lr: float | None = None
+    loss: str = "mse"
 
     def __post_init__(self):
         if self.dt_min >= self.dt_max:
             raise ValueError("dt_min must be < dt_max")
+        if self.loss not in ("mse", "gaussian_nll"):
+            raise ValueError(
+                f"Unknown loss {self.loss!r}. Must be 'mse' or 'gaussian_nll'."
+            )
 
     def model_kwargs(self) -> dict:
+        # gaussian_nll needs the network to emit mean + log-var → 2 * d_output
+        model_d_output = 2 * self.d_output if self.loss == "gaussian_nll" else self.d_output
         return {
             "d_input":  self.d_input,
-            "d_output": self.d_output,
+            "d_output": model_d_output,
             "d_model":  self.d_model,
             "d_state":  self.d_state,
             "n_layers": self.n_layers,
@@ -60,13 +73,21 @@ class S4DModelConfig:
             dt_min=m.get("dt_min",    0.001),
             dt_max=m.get("dt_max",    0.1),
             lr=m.get("lr",            None),
+            loss=m.get("loss",        "mse"),
         )
 
 
-class LitModelS4DMSE(L.LightningModule):
-    """Lightning module for S4D-based BNS chirp-mass regression with MSE loss.
+class LitModelS4D(L.LightningModule):
+    """Lightning module for S4D-based BNS parameter regression.
 
-    Mirrors BNSReg's LitModelS4DMSE.
+    Supports two loss functions selected via ``model_cfg.loss``:
+
+    * ``"mse"``          – MSELoss (original behaviour).
+    * ``"gaussian_nll"`` – GaussianNLLLoss with predicted per-variable
+                           uncertainties.  The network outputs
+                           ``[mean_0, …, mean_{d-1}, log_var_0, …, log_var_{d-1}]``
+                           (2 * d_output values).  Log-variance is used so the
+                           predicted variance is always positive after ``exp()``.
 
     Batch format (from LitBNSDataRegression / BNSDatasetRegression):
         X_observed : (B, n_ifos, seq_len)
@@ -77,7 +98,12 @@ class LitModelS4DMSE(L.LightningModule):
         super().__init__()
         self.save_hyperparameters()
         self.cfg = model_cfg
-        self.criterion = torch.nn.MSELoss(reduction="mean")
+
+        if model_cfg.loss == "gaussian_nll":
+            self.criterion = torch.nn.GaussianNLLLoss(full=False, eps=1e-6, reduction="mean")
+        else:
+            self.criterion = torch.nn.MSELoss(reduction="mean")
+
         self.model: S4Model | None = None
         self.configure_model()
 
@@ -99,30 +125,48 @@ class LitModelS4DMSE(L.LightningModule):
         X_observed, y_target = batch
         # X_observed: (B, n_ifos, seq_len) → transpose → (B, seq_len, n_ifos)
         x = X_observed.transpose(2, 1)
-        outputs = self(x)                                   # (B, d_output)
+        outputs = self(x)                                   # (B, model_d_output)
 
-        mse_per_var = torch.nn.MSELoss(reduction="none")
-        y_indiv_mse = mse_per_var(outputs, y_target).T.mean(dim=1)  # (d_output,)
-        return self.criterion(outputs, y_target), y_indiv_mse
+        if self.cfg.loss == "gaussian_nll":
+            d = self.cfg.d_output
+            mean    = outputs[:, :d]       # (B, d_output)
+            log_var = outputs[:, d:]       # (B, d_output)
+            var     = torch.exp(log_var)   # (B, d_output) – always positive
+
+            loss = self.criterion(mean, y_target, var)
+
+            # Per-variable NLL for logging
+            gnll_none = torch.nn.GaussianNLLLoss(full=False, eps=1e-6, reduction="none")
+            y_indiv = gnll_none(mean, y_target, var).mean(dim=0)  # (d_output,)
+        else:
+            mse_per_var = torch.nn.MSELoss(reduction="none")
+            y_indiv = mse_per_var(outputs, y_target).mean(dim=0)  # (d_output,)
+            loss = self.criterion(outputs, y_target)
+
+        return loss, y_indiv
 
     # ------------------------------------------------------------------
+    def _log_per_var(self, y_indiv, prefix: str):
+        metric = "nll" if self.cfg.loss == "gaussian_nll" else "mse"
+        for i, val in enumerate(y_indiv):
+            self.log(f"{prefix}/{metric}/var_{i}", val, on_step=False, on_epoch=True)
+
     def training_step(self, batch, batch_idx):
-        loss, y_indiv_mse = self.compute_loss(batch)
+        loss, y_indiv = self.compute_loss(batch)
         self.log("train/loss", loss, on_step=False, on_epoch=True, prog_bar=True)
-        for i, mse_i in enumerate(y_indiv_mse):
-            self.log(f"train/mse/var_{i}", mse_i, on_step=False, on_epoch=True)
+        self._log_per_var(y_indiv, "train")
         return loss
 
     def validation_step(self, batch, batch_idx):
-        loss, y_indiv_mse = self.compute_loss(batch)
+        loss, y_indiv = self.compute_loss(batch)
         self.log("val/loss", loss, on_step=False, on_epoch=True, prog_bar=True)
-        for i, mse_i in enumerate(y_indiv_mse):
-            self.log(f"val/mse/var_{i}", mse_i, on_step=False, on_epoch=True)
+        self._log_per_var(y_indiv, "val")
         return loss
 
     def test_step(self, batch, batch_idx):
-        loss, y_indiv_mse = self.compute_loss(batch)
+        loss, y_indiv = self.compute_loss(batch)
         self.log("test/loss", loss, on_step=False, on_epoch=True, prog_bar=True)
+        self._log_per_var(y_indiv, "test")
         return loss
 
     # ------------------------------------------------------------------

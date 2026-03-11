@@ -85,10 +85,20 @@ class SparseRegressionConfig:
         bs = data_cfg.get("batch_size", 32)
         nw = data_cfg.get("num_workers", 4)
 
+        raw_vars = data_cfg.get("target_variables", ["chirp_mass"])
+        target_variables = tuple(raw_vars)
+        for v in target_variables:
+            if v not in _VALID_VARIABLES:
+                raise ValueError(
+                    f"Unknown target variable {v!r}. "
+                    f"Valid options: {sorted(_VALID_VARIABLES)}"
+                )
+
         return cls(
             train_dir=f"{data_dir}/train",
             val_dir=f"{data_dir}/val",
             test_dir=f"{data_dir}/test",
+            target_variables=target_variables,
             train_batch_size=bs,
             val_batch_size=bs,
             test_batch_size=bs,
