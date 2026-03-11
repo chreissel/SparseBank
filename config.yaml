@@ -60,10 +60,15 @@ bank_filter:
 # ── Step 4: Matched filtering ───────────
 matched_filter:
   ifos: [H1, L1]
-  # GW frame files (gwf) for each IFO
-  strain_files:
-    - data/H1_strain.gwf
-    - data/L1_strain.gwf
+  # Pre-whitened HDF5 test data produced by step 1.
+  # Defaults to {data_dir}/test when omitted.
+  test_dir: /n/holystore01/LABS/iaifi_lab/Lab/creissel/SparseBank/sim/test
+  # Detector channel names written into the temporary GWF files.
+  channel_names:
+    H1: GDS-CALIB_STRAIN
+    L1: GDS-CALIB_STRAIN
+  # Fake GPS start time assigned to each simulated segment (seconds).
+  gps_start: 1000000000
   psd_fft_length:    16
   ht_gate_threshold: 100
   svd_tolerance:     0.9999
