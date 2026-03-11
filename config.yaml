@@ -60,18 +60,10 @@ bank_filter:
 # ── Step 4: Matched filtering ───────────
 matched_filter:
   ifos: [H1, L1]
-  # GW frame files (gwf) for each IFO
-  strain_files:
-    - data/H1_strain.gwf
-    - data/L1_strain.gwf
-  psd_fft_length:    16
-  ht_gate_threshold: 100
-  svd_tolerance:     0.9999
-  output_dir:        gstlal_output
-  # Set use_condor: true to submit an HTCondor DAG
-  use_condor:   false
-  # Set run_locally: true to call gstlal_inspiral directly
-  run_locally:  true
+  # Pre-whitened HDF5 test data produced by step 1.
+  # Defaults to {data_dir}/test when omitted.
+  test_dir: /n/holystore01/LABS/iaifi_lab/Lab/creissel/SparseBank/sim/test
+  output_dir: gstlal_output
 
 # ── Step 5: Sensitive volume ──────────────────────────────────
 sensitive_volume:
