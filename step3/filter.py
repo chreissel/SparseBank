@@ -58,7 +58,7 @@ def _predict_chirp_mass(model, strain: np.ndarray) -> float:
 
     with torch.no_grad():
         pred = model(x)
-    return float(pred.squeeze())
+    return pred.cpu().flatten().tolist()
 
 
 def _prune_bank(bank_in: Path, bank_out: Path,
@@ -143,12 +143,6 @@ def filter_bank(cfg: dict, ckpt_path: Path) -> list[dict]:
             strains_chunk = f["injected_data"][:]
             y_true_chunk  = f["chirp_mass"][:]
 
-        # Flatten batched format if necessary: (n_gen, bs, n_ifos, L) → (N, n_ifos, L)
-        if strains_chunk.ndim == 4:
-            n_gen, bs = strains_chunk.shape[:2]
-            strains_chunk = strains_chunk.reshape(n_gen * bs, *strains_chunk.shape[2:])
-            y_true_chunk  = y_true_chunk.reshape(-1)
-
         all_strains.append(strains_chunk)
         all_y_true.append(y_true_chunk)
 
@@ -168,7 +162,7 @@ def filter_bank(cfg: dict, ckpt_path: Path) -> list[dict]:
     n_before    = None  # read full bank size once for logging
 
     for i, strain in enumerate(strains):
-        mc_pred  = _predict_chirp_mass(model, strain)
+        mc_pred, ratio_pred, mc_unc, ratio_unc = _predict_chirp_mass(model, strain)
         bank_out = banks_dir / f"bank_event_{i:06d}.xml.gz"
 
         n_kept = _prune_bank(bank_in, bank_out, mc_pred, margin)
