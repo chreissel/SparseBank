@@ -29,7 +29,7 @@ data:
   num_workers: 4
 
 model:
-  d_input:  1    # number of input channels (strain only)
+  d_input:  2    # number of input channels (strain only)
   d_output: 1    # predict chirp mass
   d_model:  64
   d_state:  16

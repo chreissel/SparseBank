@@ -1,20 +1,6 @@
 # Adapted from BNSReg (kyoon-mit/BNSReg) to handle the HDF5 format
 # produced by SparseBank's step1/data.py.
 #
-# Step1 stores data in batched form:
-#   injected_data : (n_gen_batches, gen_batch_size, n_ifos, seq_len)
-#   chirp_mass    : (n_gen_batches, gen_batch_size)
-#   mass_ratio    : (n_gen_batches, gen_batch_size)
-#   snr           : (n_gen_batches, gen_batch_size)
-#
-# OR in already-flattened form:
-#   injected_data : (n_samples, n_ifos, seq_len)
-#
-# The dataset handles both shapes transparently.
-#
-# Multiple *.h5 files with the same structure can live in a single
-# directory; the dataset discovers all of them and presents them as one
-# concatenated dataset.
 
 from __future__ import annotations
 
@@ -38,7 +24,6 @@ _DTYPE_MAP = {
     "torch.float32": torch.float32,
     "torch.float16": torch.float16,
 }
-
 
 @dataclass(frozen=True)
 class SparseRegressionConfig:
@@ -120,15 +105,6 @@ class BNSDatasetRegression(Dataset):
     and presents them as a single concatenated dataset.  Every file must
     share the same HDF5 key structure and spatial dimensions
     (n_ifos, seq_len).
-
-    Both the step1 batched format (4-D) and the already-flattened format
-    (3-D) are supported and may be mixed across files in the same folder.
-
-    Returns 2-tuples:
-        (X_observed, y_target)
-
-    X_observed : (n_ifos, seq_len)   — raw whitened strain per detector
-    y_target   : (len(target_variables),)
     """
 
     def __init__(self, stage: Stage, cfg: SparseRegressionConfig):
@@ -153,7 +129,7 @@ class BNSDatasetRegression(Dataset):
         self.var_dtype = _DTYPE_MAP[cfg.variables_precision]
 
         # Inspect every file once to build the cumulative index table.
-        self._file_meta: List[dict] = []
+        self._file_meta: List[dict] = []  
         self._cumulative_sizes: List[int] = []  # cumulative n_samples
 
         n_ifos: int | None = None
@@ -164,31 +140,8 @@ class BNSDatasetRegression(Dataset):
             with h5py.File(fp, "r") as f:
                 shape = f[cfg.injected_data_key].shape
 
-            if len(shape) == 4:
-                nb, gb, fi, sl = shape
-                n_samples = nb * gb
-                meta: dict = {"4d": True, "n_gen_batches": nb, "gen_batch_size": gb}
-            elif len(shape) == 3:
-                n_samples, fi, sl = shape
-                meta = {"4d": False}
-            else:
-                raise ValueError(
-                    f"injected_data in {fp} has unexpected shape {shape}; "
-                    "expected 3-D (n_samples, n_ifos, seq_len) or "
-                    "4-D (n_gen_batches, gen_batch_size, n_ifos, seq_len)."
-                )
-
-            if n_ifos is None:
-                n_ifos, seq_len = fi, sl
-                self.n_ifos = n_ifos
-                self.seq_len = seq_len
-            elif (fi, sl) != (n_ifos, seq_len):
-                raise ValueError(
-                    f"Shape mismatch in {fp}: (n_ifos={fi}, seq_len={sl}) "
-                    f"but previous files had ({n_ifos}, {seq_len})."
-                )
-
-            meta["n_samples"] = n_samples
+            n_samples = shape[0]
+            meta = {'n_samples': n_samples}
             self._file_meta.append(meta)
             cumsum += n_samples
             self._cumulative_sizes.append(cumsum)
@@ -232,13 +185,8 @@ class BNSDatasetRegression(Dataset):
         meta = self._file_meta[file_idx]
         f = self._get_file(file_idx)
 
-        if meta["4d"]:
-            bi, si = divmod(local_idx, meta["gen_batch_size"])
-            x_raw = f[self.cfg.injected_data_key][bi, si]   # (n_ifos, seq_len)
-            y_raw = {k: f[k][bi, si] for k in self.cfg.target_variables}
-        else:
-            x_raw = f[self.cfg.injected_data_key][local_idx]  # (n_ifos, seq_len)
-            y_raw = {k: f[k][local_idx] for k in self.cfg.target_variables}
+        x_raw = f[self.cfg.injected_data_key][local_idx,:,:]
+        y_raw = {k: f[k][local_idx] for k in self.cfg.target_variables}
 
         X_observed = torch.as_tensor(x_raw, dtype=self.strain_dtype)   # (n_ifos, seq_len)
 
