@@ -15,13 +15,13 @@ def _load_model(ckpt_path: Path):
     """
     Load the trained S4D regression model from a Lightning checkpoint.
 
-    Uses the same LitModelS4DMSE class from step2 so the architecture
+    Uses the same LitModelS4D class from step2 so the architecture
     is guaranteed to match the checkpoint that was just produced by
     train_regression().  Returns the inner S4Model in eval mode on CPU.
     """
-    from step2.task import LitModelS4DMSE
+    from step2.task import LitModelS4D
 
-    lit = LitModelS4DMSE.load_from_checkpoint(str(ckpt_path), map_location="cpu")
+    lit = LitModelS4D.load_from_checkpoint(str(ckpt_path), map_location="cpu")
     model = lit.model
     model.eval()
     return model

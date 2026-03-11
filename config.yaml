@@ -51,9 +51,9 @@ training:
 # ── Step 3: Bank filtering ────────────────────────
 bank_filter:
   # Path to the full gstlal template bank (XML or XML.gz)
-  input_bank:  templates/full_bns_bank.xml.gz
+  input_bank:  ./bns.xml
   # Output filtered bank
-  output_bank: templates/filtered_bank.xml.gz
+  output_bank: templates/filtered_banks/
   # Extra margin around predicted chirp-mass range (M_sun)
   margin: 0.1
 
