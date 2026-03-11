@@ -27,14 +27,22 @@ data:
   data_dir: /n/holystore01/LABS/iaifi_lab/Lab/creissel/SparseBank/sim/
   batch_size: 32
   num_workers: 4
+  # Variables to regress. Any subset of the keys stored in the HDF5 files:
+  #   chirp_mass, mass_ratio, snr, chi1, chi2, distance, inclination,
+  #   dec, psi, phi, phic, mass_1, mass_2, s1z, s2z
+  target_variables: [chirp_mass]
 
 model:
   d_input:  2    # number of input channels (strain only)
-  d_output: 1    # predict chirp mass
+  d_output: 1    # number of regression targets (must match len(target_variables))
   d_model:  64
   d_state:  16
   n_layers: 4
   dropout:  0.1
+  # Loss function: "mse" (MSELoss) or "gaussian_nll" (GaussianNLLLoss with
+  # predicted uncertainties). With gaussian_nll the model outputs mean + log-var
+  # for each target variable (2 * d_output outputs total).
+  loss: mse
 
 training:
   max_epochs: 2
