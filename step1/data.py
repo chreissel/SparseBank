@@ -193,9 +193,8 @@ def generate_dataset(cfg: dict, split: str) -> Path:
 
         with h5py.File(out_path, "w") as f:
             f.create_dataset("injected_data", data=window)
-            f.create_dataset("chirp_mass",    data=np.array(params['chirp_mass'].cpu(), dtype=np.float32))
-            f.create_dataset("mass_ratio",    data=np.array(params['mass_ratio'].cpu(), dtype=np.float32))
-            f.create_dataset("snr",           data=np.array(params['snr'].cpu(), dtype=np.float32))
+            for k, v in params.items():
+                f.create_dataset(k, data=np.array(v.cpu(), dtype=np.float32))
 
     log.info(f"[Step 1] Done. Written {out_dir}")
     return out_dir
