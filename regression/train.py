@@ -9,11 +9,11 @@ from pathlib import Path
 
 import lightning as L
 
-from step2.dataset import SparseRegressionConfig
-from step2.dataloader import LitBNSDataRegression
-from step2.task import LitModelS4D, S4DModelConfig
+from regression.dataset import SparseRegressionConfig
+from regression.dataloader import LitBNSDataRegression
+from regression.task import LitModelS4D, S4DModelConfig
 
-log = logging.getLogger("step2")
+log = logging.getLogger("regression")
 
 
 def train_regression(cfg: dict) -> Path:

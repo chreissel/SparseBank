@@ -19,7 +19,7 @@ import torch
 import torch.nn as nn
 from einops import repeat
 
-from step2.dropout import DropoutNd
+from regression.dropout import DropoutNd
 
 
 class S4DKernel(nn.Module):

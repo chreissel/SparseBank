@@ -4,6 +4,6 @@
 # Public API consumed by regression.py:
 #   from step2 import train_regression
 
-from step2.train import train_regression
+from regression.train import train_regression
 
 __all__ = ["train_regression"]
