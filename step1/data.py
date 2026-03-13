@@ -19,11 +19,11 @@ def generate_dataset(cfg: dict, split: str) -> Path:
     """
     Generate BNS waveforms + Gaussian noise backgrounds and write to HDF5.
       - waveforms approximant: TaylorF2
-      - strain whitened, windowed, and segmented
+      - strain optionally whitened, windowed, and segmented
+      - PSD is always used to rescale waveforms to the correct network SNR
     """
-    from ml4gw.transforms import SpectralDensity
+    from ml4gw.transforms import SpectralDensity, Whiten
     from ml4gw.dataloading import Hdf5TimeSeriesDataset
-    from ml4gw.transforms import Whiten
     from ml4gw.gw import compute_network_snr,reweight_snrs, get_ifo_geometry, compute_observed_strain
     from ml4gw.distributions import PowerLaw, Sine, Cosine, DeltaFunction
     from torch.distributions import Uniform
@@ -44,6 +44,7 @@ def generate_dataset(cfg: dict, split: str) -> Path:
     f_ref       = cfg.get("f_ref", 50.0)       # Hz
     snr_min     = cfg.get("snr_min", 20.0)
     snr_max     = cfg.get("snr_max", 30.0)
+    whiten_data = cfg.get("whiten", True)
     m_min       = cfg.get("m1_min", 1.0)
     m_max       = cfg.get("m1_max", 2.5)
     right_pad   = cfg.get("right_pad", 1.0)
@@ -151,10 +152,6 @@ def generate_dataset(cfg: dict, split: str) -> Path:
             average='median',
         ).to(device)
 
-        whiten = Whiten(
-            fduration=2.0, sample_rate=sample_rate, highpass=f_min
-        ).to(device)
-
         psd = spectral_density(background[..., :psd_size].double())
         kernel = background[..., psd_size:]
 
@@ -172,8 +169,14 @@ def generate_dataset(cfg: dict, split: str) -> Path:
         waveforms = reweight_snrs(responses=waveforms,target_snrs=target_snr,psd=psd,sample_rate=sample_rate,highpass=f_min,)
 
         injected[:, :, pad:-pad] += waveforms[..., -num_samples:]
-        injected_whitened = whiten(injected, psd)
-        strain_td = injected_whitened.cpu().numpy()
+
+        if whiten_data:
+            whiten = Whiten(
+                fduration=2.0, sample_rate=sample_rate, highpass=f_min
+            ).to(device)
+            strain_td = whiten(injected, psd).cpu().numpy()
+        else:
+            strain_td = injected.float().cpu().numpy()
 
         # compute network SNR
         network_snr = compute_network_snr(responses=waveforms, psd=psd, sample_rate=sample_rate, highpass=f_min)
