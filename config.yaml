@@ -20,6 +20,9 @@ n_val:   1000
 n_test:  1000
 batch_size: 350
 whiten: true   # set to false to skip whitening while still using PSD for SNR rescaling
+window_start: 0.0    # seconds, start of saved window relative to kernel
+window_end: 55.0     # seconds, end of saved window relative to kernel
+save_psd: false      # set to true to save the PSD used for whitening into each HDF5 file
 open_data: /n/holystore01/LABS/iaifi_lab/Lab/creissel/SparseBank/background_data # root directory for HDF5 files
 data_dir: /n/holystore01/LABS/iaifi_lab/Lab/creissel/SparseBank/sim # root directory for HDF5 files
 

@@ -47,8 +47,11 @@ def generate_dataset(cfg: dict, split: str) -> Path:
     whiten_data = cfg.get("whiten", True)
     m_min       = cfg.get("m1_min", 1.0)
     m_max       = cfg.get("m1_max", 2.5)
-    right_pad   = cfg.get("right_pad", 1.0)
-    psd_length  = cfg.get("psd_length", 64.0)
+    right_pad    = cfg.get("right_pad", 1.0)
+    psd_length   = cfg.get("psd_length", 64.0)
+    window_start = cfg.get("window_start", 0.0)   # seconds, start of saved window
+    window_end   = cfg.get("window_end", 55.0)     # seconds, end of saved window
+    save_psd     = cfg.get("save_psd", False)
     open_data   = Path(cfg["open_data"])
 
     nyguist = sample_rate / 2
@@ -183,8 +186,8 @@ def generate_dataset(cfg: dict, split: str) -> Path:
         params['snr'] = network_snr
 
         # keep only a small window around merger
-        t_start = int(0.0 * sample_rate)
-        t_end   = int(55.0 * sample_rate)
+        t_start = int(window_start * sample_rate)
+        t_end   = int(window_end * sample_rate)
         window  = strain_td[:, :, t_start:t_end]
 
         total += batch_size
@@ -193,6 +196,8 @@ def generate_dataset(cfg: dict, split: str) -> Path:
 
         with h5py.File(out_path, "w") as f:
             f.create_dataset("injected_data", data=window)
+            if save_psd:
+                f.create_dataset("psd", data=psd.cpu().numpy())
             for k, v in params.items():
                 f.create_dataset(k, data=np.array(v.cpu(), dtype=np.float32))
 
