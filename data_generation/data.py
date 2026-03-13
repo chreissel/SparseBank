@@ -51,6 +51,7 @@ def generate_dataset(cfg: dict, split: str) -> Path:
     psd_length   = cfg.get("psd_length", 64.0)
     window_start = cfg.get("window_start", 0.0)   # seconds, start of saved window
     window_end   = cfg.get("window_end", 55.0)     # seconds, end of saved window
+    save_psd     = cfg.get("save_psd", False)
     open_data   = Path(cfg["open_data"])
 
     nyguist = sample_rate / 2
@@ -195,6 +196,8 @@ def generate_dataset(cfg: dict, split: str) -> Path:
 
         with h5py.File(out_path, "w") as f:
             f.create_dataset("injected_data", data=window)
+            if save_psd:
+                f.create_dataset("psd", data=psd.cpu().numpy())
             for k, v in params.items():
                 f.create_dataset(k, data=np.array(v.cpu(), dtype=np.float32))
 
