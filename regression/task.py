@@ -9,7 +9,7 @@ import torch
 from torch import optim
 import lightning as L
 
-from step2.model import S4Model
+from regression.model import S4Model
 
 
 @dataclass(frozen=True)

@@ -4,7 +4,7 @@
 import lightning as L
 from torch.utils.data import DataLoader
 
-from step2.dataset import BNSDatasetRegression, SparseRegressionConfig
+from regression.dataset import BNSDatasetRegression, SparseRegressionConfig
 
 
 class LitBNSDataRegression(L.LightningDataModule):

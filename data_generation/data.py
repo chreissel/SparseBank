@@ -13,7 +13,7 @@ from types import SimpleNamespace
 import torch
 
 import logging
-log = logging.getLogger("step1")
+log = logging.getLogger("data_generation")
 
 def generate_dataset(cfg: dict, split: str) -> Path:
     """
@@ -28,9 +28,9 @@ def generate_dataset(cfg: dict, split: str) -> Path:
     from ml4gw.distributions import PowerLaw, Sine, Cosine, DeltaFunction
     from torch.distributions import Uniform
     from ml4gw.waveforms.generator import TimeDomainCBCWaveformGenerator
-    from step1.transforms import Triangular
+    from data_generation.transforms import Triangular
     from ml4gw.waveforms import TaylorF2
-    from step1.load_data import load_data
+    from data_generation.load_data import load_data
 
     rng = np.random.default_rng(cfg.get("seed", 42) + hash(split) % 2**31)
 
